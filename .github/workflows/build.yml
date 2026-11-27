@@ -1,0 +1,43 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find project and pick versions
+        id: cfg
+        run: |
+          S=$(find . -maxdepth 3 \( -name settings.gradle -o -name settings.gradle.kts \) -not -path "./.git/*" | head -1)
+          DIR=$(dirname "$S")
+          echo "dir=$DIR" >> $GITHUB_OUTPUT
+          AGP=$(grep -rhoE "com\.android\.(tools\.build:gradle:|application['\"]? *version *['\"])[0-9]+\.[0-9]+" "$DIR" --include=build.gradle --include=build.gradle.kts --include=settings.gradle --include=settings.gradle.kts | grep -oE "[0-9]+\.[0-9]+$" | head -1)
+          echo "AGP=$AGP"
+          case "$AGP" in
+            8.7|8.8) G=8.9;; 8.6) G=8.7;; 8.5) G=8.7;; 8.4) G=8.6;; 8.3) G=8.4;; 8.2) G=8.2;;
+            8.1|8.0) G=8.0;; 7.4) G=7.5;; 7.3) G=7.4;; 7.2) G=7.3.3;; 7.1) G=7.2;; 7.0) G=7.0.2;;
+            *) G=8.7;;
+          esac
+          echo "gradle=$G" >> $GITHUB_OUTPUT
+          echo "Project dir: $DIR, Gradle: $G"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ steps.cfg.outputs.gradle }}
+
+      - name: Build debug APK
+        working-directory: ${{ steps.cfg.outputs.dir }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: ${{ steps.cfg.outputs.dir }}/**/build/outputs/apk/debug/*.apk
